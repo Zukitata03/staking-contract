@@ -48,6 +48,7 @@ pub fn execute(
     match msg {
         ExecuteMsg::Stake { amount } => try_stake(deps, env, info, amount),
         ExecuteMsg::Withdraw { amount } => try_withdraw(deps, env, info, amount),
+        ExecuteMsg::Claim {  } => try_claim(deps, env, info),
     }
 }
 
@@ -125,6 +126,34 @@ pub fn query(deps: DepsMut, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::User { address } => to_json_binary(&query_user(deps, env, address)?),
     }
 }
+
+fn try_claim(deps: DepsMut, env:Env, info: MessageInfo) -> Result<Response, ContractError> {
+    let mut config = read_config(deps.storage)?;
+    let mut user = USERS.load(deps.storage, &info.sender)?;
+    update_global_state(&mut config, env.block.time.seconds())?;
+    let rewards = calculate_rewards(&config, &user, env.block.time.seconds());
+    if rewards == Uint128::zero() {
+        return Err(ContractError:: InvalidClaim {  });
+
+    }
+    user.rewards = Uint128::zero();
+    user.exchange_rate = config.global_exchange_rate;
+    user.last_staked_time = env.block.time.seconds();
+    USERS.save(deps.storage, &info.sender, &user);
+    save_config(deps.storage, &config);
+    let reward_coin = Coin {
+        denom : config.monthly_reward.denom.clone(),
+        amount: rewards,
+
+    };
+
+    Ok(Response::new()
+    .add_attribute("action", "claim")
+    .add_attribute("amount", reward_coin.amount.to_string()))
+}
+
+
+
 
 
 fn query_config(deps: DepsMut) -> StdResult<ConfigResponse> {
@@ -386,6 +415,45 @@ fn two_person_acts() {
     println!("Bob - Staked amount: {}, Rewards: {}", user.staked_amount.amount, user.rewards);
     assert_eq!(user.staked_amount.amount, Uint128::zero());
     assert!(user.rewards > Uint128::zero());
+}
+
+#[test]
+fn claim_rewards() {
+    let mut deps = mock_dependencies();
+    let mut env = mock_env();
+    let info = mock_info("creator", &[]);
+    let msg = InstantiateMsg {
+        monthly_reward: Coin {
+            denom: "orai".to_string(),
+            amount: Uint128::new(1000000),
+        },
+        eps: Uint128::new(1),
+    };
+    instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    // Alice stakes 100 ORAI
+    let info = mock_info("alice", &coins(100, "orai"));
+    let msg = ExecuteMsg::Stake {
+        amount: Coin {
+            denom: "orai".to_string(),
+            amount: Uint128::new(100),
+        },
+    };
+    execute(deps.as_mut(), env.clone(), info, msg).unwrap();
+
+    // Forward time
+    env.block.time = env.block.time.plus_seconds(86400); // 1 day 
+
+    // Alice claims rewards
+    let info = mock_info("alice", &[]);
+    let res = try_claim(deps.as_mut(), env.clone(), info.clone()).unwrap();
+    assert_eq!(res.attributes[0].value, "claim");
+    assert!(res.attributes.iter().any(|attr| attr.key == "amount" && attr.value != "0"));
+
+    // Query Alice's state 
+    let res = query(deps.as_mut(), env.clone(), QueryMsg::User { address: "alice".to_string() }).unwrap();
+    let user: UserResponse = from_binary(&res).unwrap();
+    assert_eq!(user.rewards, Uint128::zero());
 }
     
 }

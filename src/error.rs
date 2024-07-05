@@ -17,6 +17,9 @@ pub enum ContractError {
 
     #[error("InvalidAmount")]
     InvalidAmount {},
+
+    #[error("Zero Claim")]
+    InvalidClaim {},
 }
 
 impl From<ContractError> for StdError {

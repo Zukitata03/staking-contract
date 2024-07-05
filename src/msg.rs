@@ -14,6 +14,7 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Stake { amount: Coin },
     Withdraw { amount: Coin },
+    Claim {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
