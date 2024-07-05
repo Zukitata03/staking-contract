@@ -7,7 +7,6 @@ use cw_storage_plus::{Item, Map};
 pub struct Config {
     pub monthly_reward: Coin,
     pub total_value_locked: Coin,
-    pub apr: u64,
     pub eps: Uint128,
     pub last_update_time: u64,
     pub global_exchange_rate: Uint128,
